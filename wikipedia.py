@@ -14,8 +14,7 @@ ZERO_STATE = {
 }
 
 JAR_NAME = 'wikipediapageview_2.11-1.0.jar'
-LOOKBEHIND_DAYS = 1
-LOOKBEHIND_HOURS = LOOKBEHIND_DAYS * 24
+LOOKBEHIND_DAYS = 60
 ROOT_URL = "http://dumps.wikimedia.org/other/pagecounts-all-sites/{year}/{year}-{month}/pagecounts-{year}{month}{day}-{hour}0000.gz"
 
 STATUS_FILE_NAME = 'status.json'
@@ -46,50 +45,40 @@ if __name__ == '__main__':
 	except IOError:
 		status_dict = ZERO_STATE
 
-	# backtrack = sys.argv[1]
-	
-	# backtrack = backtrack.split('=')[1]
-
-	# if backtrack == 'True':
-	# 	backtrack = True
-	# else:
-	# 	backtrack = False
-
 	now = datetime.now()
-	goal_date = now - timedelta(days=LOOKBEHIND_DAYS)
 
-	total_hours = LOOKBEHIND_HOURS
-	current_date = now - timedelta(hours=12)
+	if status_dict == ZERO_STATE:
+		start_date = now - timedelta(days=LOOKBEHIND_DAYS)
+	else:
+		start_date = datetime(year=status_dict['last_downloaded_year'], month=status_dict['last_downloaded_month'], day=status_dict['last_downloaded_day'], hour=1+status_dict['last_downloaded_hour'])
+	current_date = now - timedelta(hours=2) #to be sure the data is available to be downloaded we go 2 hours back
 
-	while total_hours > 0:
+	while start_date <= current_date:
 		current_url = ROOT_URL.format(
-			year=current_date.year,
-			month=str(current_date.month).zfill(2),
-			day=str(current_date.day).zfill(2),
-			hour=str(current_date.hour).zfill(2)
+			year=start_date.year,
+			month=str(start_date.month).zfill(2),
+			day=str(start_date.day).zfill(2),
+			hour=str(start_date.hour).zfill(2)
 		)
-
-		
-
 		print current_url
 		filename = current_url.split('/')[-1]
-
-		# UNCOMMMENT TO DOWNLOAD
-		# ===
-		result = os.system("wget {}".format(current_url))
-
+		# wget -N ===> overwrites the file if it exists
+		result = os.system("wget -N {}".format(current_url))
 		if result == 0:
-			# os.system("java -jar {} {}".format(JAR_NAME, filename))
-			# os.system("rm -rf {}".format(filename))
-			status_dict = update_status(
-				status_dict,
-				month=current_date.month,
-				day=current_date.day,
-				year=current_date.year,
-				hour=current_date.hour
-			)
+			print sys.argv[1:]
+			#to run the jar on spark on your local: spark-submit --class Wikipedia --master local[4] wikipedia-1_0.jar /path/to/input/file
+			status = os.system("spark-submit --class wiki.Wikipedia --master {} {} {}".format(sys.argv[1], sys.argv[2], filename))
+			if status == 0:
+ 				os.system("rm -rf {}".format(filename))
+				status_dict = update_status(
+					status_dict,
+					month=start_date.month,
+					day=start_date.day,
+					year=start_date.year,
+					hour=start_date.hour
+				)
+			else:
+				quit()
 		else:
 			quit()
-			
-		total_hours -= 1
-		current_date = current_date - timedelta(hours=1)
+		start_date = start_date + timedelta(hours=1)

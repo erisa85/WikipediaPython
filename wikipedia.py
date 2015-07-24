@@ -14,7 +14,7 @@ ZERO_STATE = {
 }
 
 JAR_NAME = 'wikipediapageview_2.11-1.0.jar'
-LOOKBEHIND_DAYS = 60
+LOOKBEHIND_DAYS = 30
 ROOT_URL = "http://dumps.wikimedia.org/other/pagecounts-all-sites/{year}/{year}-{month}/pagecounts-{year}{month}{day}-{hour}0000.gz"
 
 STATUS_FILE_NAME = 'status.json'
@@ -39,7 +39,7 @@ if __name__ == '__main__':
 		with open(STATUS_FILE_NAME, "r") as f:
 			try:
 				status_dict = json.load(f)
-				print status_dict
+				print(status_dict)
 			except ValueError:
 				status_dict = ZERO_STATE
 	except IOError:
@@ -60,23 +60,24 @@ if __name__ == '__main__':
 			day=str(start_date.day).zfill(2),
 			hour=str(start_date.hour).zfill(2)
 		)
-		print current_url
+		print(current_url)
 		filename = current_url.split('/')[-1]
+		print(filename)
 		# wget -N ===> overwrites the file if it exists
 		result = os.system("wget -N {}".format(current_url))
 		if result == 0:
-			print sys.argv[1:]
-			#to run the jar on spark on your local: spark-submit --class Wikipedia --master local[4] wikipedia-1_0.jar /path/to/input/file
-			status = os.system("spark-submit --class wiki.Wikipedia --master {} {} {}".format(sys.argv[1], sys.argv[2], filename))
+			#copy input file from local to hdfs
+			os.system("ephemeral-hdfs/bin/hadoop dfs -rmr {}".format(filename))
+			status = os.system("ephemeral-hdfs/bin/hadoop dfs -copyFromLocal {} {}".format(filename, filename))
 			if status == 0:
- 				os.system("rm -rf {}".format(filename))
-				status_dict = update_status(
-					status_dict,
-					month=start_date.month,
-					day=start_date.day,
-					year=start_date.year,
-					hour=start_date.hour
-				)
+				#to run the jar on spark on your local: spark-submit --class Wikipedia --master local[4] wikipedia-1_0.jar /path/to/input/file
+				status = os.system("spark-submit --class wiki.Wikipedia --master {} {} {}".format(sys.argv[1], sys.argv[2], filename))
+				if status == 0:
+					os.system("rm -rf {}".format(filename))
+					os.system("ephemeral-hdfs/bin/hadoop dfs -rmr -skipTrash {}".format(filename))
+					status_dict = update_status(status_dict,month=start_date.month,day=start_date.day,year=start_date.year,hour=start_date.hour)
+				else:
+					quit()
 			else:
 				quit()
 		else:
